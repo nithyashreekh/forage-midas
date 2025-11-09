@@ -16,11 +16,13 @@ public class TransactionService {
 
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final IncentiveService incentiveService;
 
     public TransactionService(UserRepository userRepository,
-                              TransactionRepository transactionRepository) {
+                              TransactionRepository transactionRepository, IncentiveService incentiveService) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
+        this.incentiveService = incentiveService;
     }
 
     /**
@@ -61,6 +63,22 @@ public class TransactionService {
         sender.debit(amount);
         recipient.credit(amount);
 
+        // --- NEW: fetch incentive from external Incentive API ---
+        // incentiveService is injected into this class (add it to the constructor if not present)
+        BigDecimal incentive = BigDecimal.ZERO;
+        try {
+            incentive = incentiveService.fetchIncentive(incoming);
+            if (incentive == null) incentive = BigDecimal.ZERO;
+        } catch (Exception ex) {
+            // if anything goes wrong, treat incentive as zero (safe fallback)
+            incentive = BigDecimal.ZERO;
+            System.err.println("Incentive fetch failed, proceeding with 0 incentive: " + ex.getMessage());
+        }
+
+        // apply incentive only to recipient
+        if (incentive.compareTo(BigDecimal.ZERO) > 0) {
+            recipient.credit(incentive);
+        }
         // save updated users (within the same transaction)
         userRepository.save(sender);
         userRepository.save(recipient);
